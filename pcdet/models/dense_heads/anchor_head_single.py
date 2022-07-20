@@ -7,26 +7,37 @@ from .anchor_head_template import AnchorHeadTemplate
 class AnchorHeadSingle(AnchorHeadTemplate):
     def __init__(self, model_cfg, input_channels, num_class, class_names, grid_size, point_cloud_range,
                  predict_boxes_when_training=True, **kwargs):
+        """
+                Args:
+                    model_cfg: AnchorHeadSingle的配置
+                    input_channels:384 输入通道数
+                    num_class: 1
+                    class_names: ['Car']
+                    grid_size: (432,493,1)
+                    point_cloud_range:(0, -39.68, -3, 69.12, 39.68, 1)
+                    predict_boxes_when_training:False
+                """
         super().__init__(
             model_cfg=model_cfg, num_class=num_class, class_names=class_names, grid_size=grid_size, point_cloud_range=point_cloud_range,
             predict_boxes_when_training=predict_boxes_when_training
         )
 
-        self.num_anchors_per_location = sum(self.num_anchors_per_location)
-
+        self.num_anchors_per_location = sum(self.num_anchors_per_location)  # 2*1=2
+        # Conv2d(384,2,kernel_size=(1,1),stride=(1,1))
         self.conv_cls = nn.Conv2d(
-            input_channels, self.num_anchors_per_location * self.num_class,
+            input_channels, self.num_anchors_per_location * self.num_class,  # 2*1=2
             kernel_size=1
         )
+        # Conv2d(384,14,kernel_size=(1,1),stride=(1,1))
         self.conv_box = nn.Conv2d(
-            input_channels, self.num_anchors_per_location * self.box_coder.code_size,
+            input_channels, self.num_anchors_per_location * self.box_coder.code_size,  # 2*7=14
             kernel_size=1
         )
-
+        # 如果存在方向损失，则添加方向卷积层Conv2d(384,4,kernel_size=(1,1),stride=(1,1))
         if self.model_cfg.get('USE_DIRECTION_CLASSIFIER', None) is not None:
             self.conv_dir_cls = nn.Conv2d(
                 input_channels,
-                self.num_anchors_per_location * self.model_cfg.NUM_DIR_BINS,
+                self.num_anchors_per_location * self.model_cfg.NUM_DIR_BINS,  # 2*2=4
                 kernel_size=1
             )
         else:

@@ -20,7 +20,7 @@ from train_utils.train_utils import train_model
 
 def parse_config():
     parser = argparse.ArgumentParser(description='arg parser')
-    parser.add_argument('--cfg_file', type=str, default=None, help='specify the config for training')
+    parser.add_argument('--cfg_file', type=str, default="cfgs/kitti_models/pointpillar.yaml", help='specify the config for training')
 
     parser.add_argument('--batch_size', type=int, default=None, required=False, help='batch size for training')
     parser.add_argument('--epochs', type=int, default=None, required=False, help='number of epochs to train for')
@@ -102,6 +102,7 @@ def main():
     tb_log = SummaryWriter(log_dir=str(output_dir / 'tensorboard')) if cfg.LOCAL_RANK == 0 else None
 
     # -----------------------create dataloader & network & optimizer---------------------------
+    # 1.构建dataset, dataloader, sampler
     train_set, train_loader, train_sampler = build_dataloader(
         dataset_cfg=cfg.DATA_CONFIG,
         class_names=cfg.CLASS_NAMES,
@@ -112,15 +113,15 @@ def main():
         merge_all_iters_to_one_epoch=args.merge_all_iters_to_one_epoch,
         total_epochs=args.epochs
     )
-
+    # 2.构建网络
     model = build_network(model_cfg=cfg.MODEL, num_class=len(cfg.CLASS_NAMES), dataset=train_set)
-    if args.sync_bn:
+    if args.sync_bn:  # 如果设置了BN同步则进行同步设置
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
     model.cuda()
-
+    # 3.构建优化器
     optimizer = build_optimizer(model, cfg.OPTIMIZATION)
 
-    # load checkpoint if it is possible
+    # 4.如果可能，尽量加载之前的模型权重
     start_epoch = it = 0
     last_epoch = -1
     if args.pretrained_model is not None:

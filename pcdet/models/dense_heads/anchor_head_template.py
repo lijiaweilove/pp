@@ -10,20 +10,31 @@ from .target_assigner.axis_aligned_target_assigner import AxisAlignedTargetAssig
 
 class AnchorHeadTemplate(nn.Module):
     def __init__(self, model_cfg, num_class, class_names, grid_size, point_cloud_range, predict_boxes_when_training):
+        """
+              AnchorHead模板
+              Args:
+                  model_cfg: AnchorHeadSingle的配置
+                  num_class: 3
+                  class_names: ['Car','Pedestrian','Cyclist']
+                  grid_size: (432,493,1)
+                  point_cloud_range:(0, -39.68, -3, 69.12, 39.68, 1)
+                  predict_boxes_when_training:False
+         """
         super().__init__()
-        self.model_cfg = model_cfg
-        self.num_class = num_class
+        self.model_cfg = model_cfg   # AnchorHeadSingle
+        self.num_class = num_class  # 3
         self.class_names = class_names
         self.predict_boxes_when_training = predict_boxes_when_training
         self.use_multihead = self.model_cfg.get('USE_MULTIHEAD', False)
 
-        anchor_target_cfg = self.model_cfg.TARGET_ASSIGNER_CONFIG
-        self.box_coder = getattr(box_coder_utils, anchor_target_cfg.BOX_CODER)(
+        anchor_target_cfg = self.model_cfg.TARGET_ASSIGNER_CONFIG  # AxisAlignedTargetAssigner
+        # 对生成的anchor和gt进行编码和解码
+        self.box_coder = getattr(box_coder_utils, anchor_target_cfg.BOX_CODER)(  # ResidualCoder
             num_dir_bins=anchor_target_cfg.get('NUM_DIR_BINS', 6),
             **anchor_target_cfg.get('BOX_CODER_CONFIG', {})
         )
 
-        anchor_generator_cfg = self.model_cfg.ANCHOR_GENERATOR_CONFIG
+        anchor_generator_cfg = self.model_cfg.ANCHOR_GENERATOR_CONFIG  # anchor生成的配置文件
         anchors, self.num_anchors_per_location = self.generate_anchors(
             anchor_generator_cfg, grid_size=grid_size, point_cloud_range=point_cloud_range,
             anchor_ndim=self.box_coder.code_size
@@ -32,7 +43,7 @@ class AnchorHeadTemplate(nn.Module):
         self.target_assigner = self.get_target_assigner(anchor_target_cfg)
 
         self.forward_ret_dict = {}
-        self.build_losses(self.model_cfg.LOSS_CONFIG)
+        self.build_losses(self.model_cfg.LOSS_CONFIG)  #1111111
 
     @staticmethod
     def generate_anchors(anchor_generator_cfg, grid_size, point_cloud_range, anchor_ndim=7):

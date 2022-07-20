@@ -35,24 +35,25 @@ class Detector3DTemplate(nn.Module):
     def build_networks(self):
         model_info_dict = {
             'module_list': [],
-            'num_rawpoint_features': self.dataset.point_feature_encoder.num_point_features,
+            'num_rawpoint_features': self.dataset.point_feature_encoder.num_point_features, # 点特征数量 4 这里是调用函数获取
             'num_point_features': self.dataset.point_feature_encoder.num_point_features,
-            'grid_size': self.dataset.grid_size,
+            'grid_size': self.dataset.grid_size,  # 网格大小 （432,496, 1） 直接根据dataset属性获取
             'point_cloud_range': self.dataset.point_cloud_range,
             'voxel_size': self.dataset.voxel_size,
-            'depth_downsample_factor': self.dataset.depth_downsample_factor
+            'depth_downsample_factor': self.dataset.depth_downsample_factor  # 下采样因子
         }
-        for module_name in self.module_topology:
-            module, model_info_dict = getattr(self, 'build_%s' % module_name)(
+        for module_name in self.module_topology:  # vfe,map_to_bev,backbone_2d,dense_head
+            # 在Detector3DTemplate生成全部子模块，如果配置文件不存在该子摸块，则直接返回None
+            module, model_info_dict = getattr(self, 'build_%s' % module_name)(  #调用self.build_vfe...
                 model_info_dict=model_info_dict
             )
-            self.add_module(module_name, module)
+            self.add_module(module_name, module)   # 这里调用nn.Module中的add_module方法，向当前的模块中填加子模块
         return model_info_dict['module_list']
 
     def build_vfe(self, model_info_dict):
         if self.model_cfg.get('VFE', None) is None:
             return None, model_info_dict
-
+        # 但是这里只是初始化，并没有调用forward函数
         vfe_module = vfe.__all__[self.model_cfg.VFE.NAME](
             model_cfg=self.model_cfg.VFE,
             num_point_features=model_info_dict['num_rawpoint_features'],
