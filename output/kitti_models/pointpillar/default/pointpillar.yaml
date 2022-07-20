@@ -1,0 +1,146 @@
+CLASS_NAMES: ['stone']
+
+DATA_CONFIG:
+    _BASE_CONFIG_: cfgs/dataset_configs/stone_dataset.yaml
+    POINT_CLOUD_RANGE: [0, -39.68, -3, 69.12, 39.68, 1] #点云范围 [x_min, y_min, z_min, x_max, y_max, z_max]
+
+    DATA_PROCESSOR:
+        - NAME: mask_points_and_boxes_outside_range
+          REMOVE_OUTSIDE_BOXES: True
+
+        - NAME: shuffle_points
+          SHUFFLE_ENABLED: {
+            'train': True,
+            'test': False
+          }
+
+        - NAME: transform_points_to_voxels
+          VOXEL_SIZE: [0.16, 0.16, 4]
+          MAX_POINTS_PER_VOXEL: 32
+          MAX_NUMBER_OF_VOXELS: {
+            'train': 16000,
+            'test': 40000
+          }
+    DATA_AUGMENTOR:
+        DISABLE_AUG_LIST: ['placeholder']
+        AUG_CONFIG_LIST:
+            - NAME: gt_sampling
+              USE_ROAD_PLANE: False
+              DB_INFO_PATH:
+                  - kitti_dbinfos_train.pkl
+              PREPARE: {
+                 filter_by_min_points: ['stone:5'],
+                 filter_by_difficulty: [-1],
+              }
+
+              SAMPLE_GROUPS: ['stone:75']
+              NUM_POINT_FEATURES: 4
+              DATABASE_WITH_FAKELIDAR: False
+              REMOVE_EXTRA_WIDTH: [0.0, 0.0, 0.0]
+              LIMIT_WHOLE_SCENE: True
+
+            - NAME: random_world_flip
+              ALONG_AXIS_LIST: ['x']
+
+            - NAME: random_world_rotation
+              WORLD_ROT_ANGLE: [-0.78539816, 0.78539816]
+
+            - NAME: random_world_scaling
+              WORLD_SCALE_RANGE: [0.95, 1.05]
+
+MODEL:
+    NAME: PointPillar
+
+    VFE:
+        NAME: PillarVFE
+        WITH_DISTANCE: False
+        USE_ABSLOTE_XYZ: True
+        USE_NORM: True
+        NUM_FILTERS: [64]  # 滤波器个数
+
+    MAP_TO_BEV:
+        NAME: PointPillarScatter  # pcdet/models/backbones_2d/map_to_bev/pointpillar_scatter.py
+        NUM_BEV_FEATURES: 64  # BEV特征数
+
+    BACKBONE_2D:
+        NAME: BaseBEVBackbone  # pcdet/models/backbones_2d/base_bev_backbone.py
+        LAYER_NUMS: [3, 5, 5]  #层数
+        LAYER_STRIDES: [2, 2, 2]   #层步幅
+        NUM_FILTERS: [64, 128, 256]   #滤波器个数
+        UPSAMPLE_STRIDES: [1, 2, 4]  #上采样步幅
+        NUM_UPSAMPLE_FILTERS: [128, 128, 128]  #上采样滤波器个数
+
+    DENSE_HEAD:  # 密集卷积头
+        NAME: AnchorHeadSingle  # pcdet/models/dense_heads/anchor_head_single.py
+        CLASS_AGNOSTIC: False
+
+        USE_DIRECTION_CLASSIFIER: True  #使用方向分类器
+        DIR_OFFSET: 0.78539   #方向偏移量   = π / 4
+        DIR_LIMIT_OFFSET: 0.0  #方向限制偏移量
+        NUM_DIR_BINS: 2   #BINS的方向数
+
+        ANCHOR_GENERATOR_CONFIG: [
+            {
+                'class_name': 'stone',
+#                'anchor_sizes': [[3.9, 1.6, 1.56]],
+                'anchor_sizes': [[0.3, 0.3, 0.3]],
+                'anchor_rotations': [0, 1.57],  # 水平和垂直两个anchor
+                'anchor_bottom_heights': [-1.78],
+                'align_center': False,
+                'feature_map_stride': 2,
+                'matched_threshold': 0.5,  # iou大于0.6是正样本，小于0.45的是负样本，中间的舍去
+                'unmatched_threshold': 0.35
+            }
+        ]
+
+        TARGET_ASSIGNER_CONFIG:  # 目标分配器配置
+            NAME: AxisAlignedTargetAssigner  #轴对准目标分配器  pcdet/models/dense_heads/target_assigner/axis_aligned_target_assigner.py
+            POS_FRACTION: -1.0  #POS分数
+            SAMPLE_SIZE: 512   #样本大小
+            NORM_BY_NUM_EXAMPLES: False
+            MATCH_HEIGHT: False  #匹配高
+            BOX_CODER: ResidualCoder  #BOX编码器
+
+        LOSS_CONFIG:  # 损失配置
+            LOSS_WEIGHTS: {
+                'cls_weight': 1.0,  # 分类权重
+                'loc_weight': 2.0,  # 位置权重
+                'dir_weight': 0.2,   # 方向权重
+                'code_weights': [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]  #代码权重
+            }
+
+    POST_PROCESSING:   # 后期处理
+        RECALL_THRESH_LIST: [0.3, 0.5, 0.7] #recall阈值列表
+        SCORE_THRESH: 0.1  #分数阈值
+        OUTPUT_RAW_SCORE: False  #输出原始分数
+
+        EVAL_METRIC: kitti  #评估指标
+
+        NMS_CONFIG:  # NMS配置
+            MULTI_CLASSES_NMS: False  # 多类NMS
+            NMS_TYPE: nms_gpu  #NMS类型
+            NMS_THRESH: 0.01  #NMS阈值
+            NMS_PRE_MAXSIZE: 4096  #NMS上限
+            NMS_POST_MAXSIZE: 500  # NMS POST上限
+
+
+OPTIMIZATION:
+    BATCH_SIZE_PER_GPU: 1
+    NUM_EPOCHS: 80
+
+    OPTIMIZER: adam_onecycle  #优化器
+    LR: 0.003  #学习率
+    WEIGHT_DECAY: 0.01  #衰减量
+    MOMENTUM: 0.9  #动量
+
+    MOMS: [0.95, 0.85]
+    PCT_START: 0.4
+    DIV_FACTOR: 10
+    DECAY_STEP_LIST: [35, 45]
+    LR_DECAY: 0.1  #学习率衰减
+    LR_CLIP: 0.0000001
+
+    LR_WARMUP: False
+    WARMUP_EPOCH: 1
+
+    GRAD_NORM_CLIP: 10
