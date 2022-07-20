@@ -1,4 +1,5 @@
 #环境
+conda install pytorch==1.8.0 torchvision==0.9.0 torchaudio==0.8.0 cudatoolkit=11.1 -c conda-forge
 pip install -r  requirements.txt
 pip install spconv-cu111
 #生成pkl文件
