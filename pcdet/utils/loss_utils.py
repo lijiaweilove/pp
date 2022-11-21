@@ -316,15 +316,16 @@ def _reg_loss(regr, gt_regr, mask):
     Refer to https://github.com/tianweiy/CenterPoint
     L1 regression loss
     Args:
-        regr (batch x max_objects x dim)
-        gt_regr (batch x max_objects x dim)
-        mask (batch x max_objects)
+        regr (batch x max_objects x dim)=(1, 500, 10)
+        gt_regr (batch x max_objects x dim)=(1, 500, 8)
+        mask (batch x max_objects)=(1, 500)
     Returns:
     """
     num = mask.float().sum()
     mask = mask.unsqueeze(2).expand_as(gt_regr).float()
     isnotnan = (~ torch.isnan(gt_regr)).float()
-    mask *= isnotnan
+    mask *= isnotnan  # (1, 500, 8)
+    # (1, 500, 10) * (1, 500, 8)
     regr = regr * mask
     gt_regr = gt_regr * mask
 
@@ -355,9 +356,16 @@ def _gather_feat(feat, ind, mask=None):
 
 
 def _transpose_and_gather_feat(feat, ind):
+    """
+    将ground truth中计算得到的对应中心点的值获取
+    :param feat: (1, 10, 248, 216)
+    :param ind: (1, 500)
+    :return: (1, 500, 10)
+    """
     feat = feat.permute(0, 2, 3, 1).contiguous()
     feat = feat.view(feat.size(0), -1, feat.size(3))
-    feat = _gather_feat(feat, ind)
+    feat = _gather_feat(feat, ind)  # (1, 500, 10)
+    # print("我是feat2：{}".format(feat.shape))
     return feat
 
 
@@ -372,15 +380,18 @@ class RegLossCenterNet(nn.Module):
     def forward(self, output, mask, ind=None, target=None):
         """
         Args:
-            output: (batch x dim x h x w) or (batch x max_objects)
-            mask: (batch x max_objects)
-            ind: (batch x max_objects)
-            target: (batch x max_objects x dim)
+            output: (batch x dim x h x w) or (batch x max_objects)=(1, 10, 248, 216)
+            mask: (batch x max_objects)=(1, 500)
+            ind: (batch x max_objects)=(1, 500)
+            target: (batch x max_objects x dim)=(1, 500, 8)
         Returns:
         """
         if ind is None:
             pred = output
         else:
-            pred = _transpose_and_gather_feat(output, ind)
+            # print(target)
+            # 将ground truth中计算得到的对应中心点的值获取
+            pred = _transpose_and_gather_feat(output, ind)  # (1, 500, 10)
+        # print(pred.shape)
         loss = _reg_loss(pred, target, mask)
         return loss

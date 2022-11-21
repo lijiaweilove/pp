@@ -8,15 +8,15 @@ class AnchorHeadSingle(AnchorHeadTemplate):
     def __init__(self, model_cfg, input_channels, num_class, class_names, grid_size, point_cloud_range,
                  predict_boxes_when_training=True, **kwargs):
         """
-                Args:
-                    model_cfg: AnchorHeadSingle的配置
-                    input_channels:384 输入通道数
-                    num_class: 1
-                    class_names: ['Car']
-                    grid_size: (432,493,1)
-                    point_cloud_range:(0, -39.68, -3, 69.12, 39.68, 1)
-                    predict_boxes_when_training:False
-                """
+            Args:
+                model_cfg: AnchorHeadSingle的配置
+                input_channels:384 输入通道数
+                num_class: 1
+                class_names: ['Car']
+                grid_size: (432,493,1)
+                point_cloud_range:(0, -39.68, -3, 69.12, 39.68, 1)
+                predict_boxes_when_training:False
+        """
         super().__init__(
             model_cfg=model_cfg, num_class=num_class, class_names=class_names, grid_size=grid_size, point_cloud_range=point_cloud_range,
             predict_boxes_when_training=predict_boxes_when_training

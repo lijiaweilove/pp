@@ -31,7 +31,7 @@ class StoneDataset(DatasetTemplate):
 
         # split_dir = self.root_path / 'ImageSets' / (self.split + '.txt')
         # self.sample_id_list = [x.strip() for x in open(split_dir).readlines()] if split_dir.exists() else None
-        sample_file_list = glob.glob(str(self.root_split_path / 'lidar/*.bin'))
+        sample_file_list = glob.glob(str(self.root_split_path / 'lidar/*.bin'))    # 返回与路径名模式匹配的路径列表
         sample_file_list.sort()
         self.sample_id_list = []
         for i in range(len(sample_file_list)):
@@ -144,7 +144,7 @@ class StoneDataset(DatasetTemplate):
                 annotations['name'] = np.array([obj.cls_type for obj in obj_list])
                 # annotations['truncated'] = np.array([obj.truncation for obj in obj_list])
                 # annotations['occluded'] = np.array([obj.occlusion for obj in obj_list])
-                annotations['alpha'] = np.array([obj.alpha for obj in obj_list])
+                # annotations['alpha'] = np.array([obj.alpha for obj in obj_list])
                 # annotations['bbox'] = np.concatenate([obj.box2d.reshape(1, 4) for obj in obj_list], axis=0)
                 annotations['dimensions'] = np.array([[obj.l, obj.h, obj.w] for obj in obj_list])  # hwl(kitti) lhw(dimensions) lwh(gt_boxes_lidar)
                 annotations['location'] = np.concatenate([obj.loc.reshape(1, 3) for obj in obj_list], axis=0)  #　xyz
@@ -271,7 +271,7 @@ class StoneDataset(DatasetTemplate):
             ret_dict = {
                 'name': np.zeros(num_samples), 'dimensions': np.zeros([num_samples, 3]),
                 # 'truncated': np.zeros(num_samples), 'occluded': np.zeros(num_samples), 'bbox': np.zeros([num_samples, 4]),
-                'alpha': np.zeros(num_samples),
+                # 'alpha': np.zeros(num_samples),
                 'location': np.zeros([num_samples, 3]), 'rotation_y': np.zeros(num_samples),
                 'score': np.zeros(num_samples), 'boxes_lidar': np.zeros([num_samples, 7])
             }
@@ -294,7 +294,7 @@ class StoneDataset(DatasetTemplate):
             # )
 
             pred_dict['name'] = np.array(class_names)[pred_labels - 1]
-            pred_dict['alpha'] = -np.arctan2(-pred_boxes[:, 1], pred_boxes[:, 0]) + pred_boxes_camera[:, 6]
+            # pred_dict['alpha'] = -np.arctan2(-pred_boxes[:, 1], pred_boxes[:, 0]) + pred_boxes_camera[:, 6]
             # pred_dict['bbox'] = pred_boxes_img
             pred_dict['dimensions'] = pred_boxes_camera[:, 3:6]   # lhw
             pred_dict['location'] = pred_boxes_camera[:, 0:3]
@@ -321,8 +321,9 @@ class StoneDataset(DatasetTemplate):
                     dims = single_pred_dict['dimensions']  #  lhw->hwl  hwl(kitti) lhw(dimensions) lwh(gt_boxes_lidar)
 
                     for idx in range(len(name)):
-                        print('%s -1 -1 %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f'
-                              % (name[idx], single_pred_dict['alpha'][idx],
+                        print('%s -1 -1 %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f'
+                              % (name[idx],
+                                 # single_pred_dict['alpha'][idx],
                                  # bbox[idx][0], bbox[idx][1], bbox[idx][2], bbox[idx][3],
                                  dims[idx][1], dims[idx][2], dims[idx][0],
                                  loc[idx][0], loc[idx][1], loc[idx][2], single_pred_dict['rotation_y'][idx],

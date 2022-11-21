@@ -59,9 +59,9 @@ def parse_config():
     parser = argparse.ArgumentParser(description='arg parser')
     parser.add_argument('--cfg_file', type=str, default='cfgs/kitti_models/pointpillar.yaml',
                         help='specify the config for demo')
-    parser.add_argument('--data_path', type=str, default=None,
+    parser.add_argument('--data_path', type=str, default='../data/stone/testing/lidar/000002.bin',
                         help='specify the point cloud data file or directory')
-    parser.add_argument('--ckpt', type=str, default='../output/kitti_models/pointpillar/default/ckpt/checkpoint_epoch_80.pth', 
+    parser.add_argument('--ckpt', type=str, default='../output/kitti_models/pointpillar/default/ckpt/checkpoint_epoch_80.pth',
                         help='specify the pretrained model')
     parser.add_argument('--ext', type=str, default='.bin', help='specify the extension of your point cloud data file')
 
@@ -76,27 +76,28 @@ def main():
     args, cfg = parse_config()
     logger = common_utils.create_logger()
     logger.info('-----------------Quick Demo of OpenPCDet-------------------------')
-    demo_dataset = DemoDataset(
+    demo_dataset = DemoDataset(  # 创建数据集
         dataset_cfg=cfg.DATA_CONFIG, class_names=cfg.CLASS_NAMES, training=False,
         root_path=Path(args.data_path), ext=args.ext, logger=logger
     )
     logger.info(f'Total number of samples: \t{len(demo_dataset)}')
-
+    # 构建网络
     model = build_network(model_cfg=cfg.MODEL, num_class=len(cfg.CLASS_NAMES), dataset=demo_dataset)
+    # 加载权重文件
     model.load_params_from_file(filename=args.ckpt, logger=logger, to_cpu=True)
 
     model.cuda()
-    model.eval()
+    model.eval()  # 开启评估模式
 
-    with torch.no_grad():
+    with torch.no_grad():  # 进行预测
         for idx, data_dict in enumerate(demo_dataset):
             logger.info(f'Visualized sample index: \t{idx + 1}')
             data_dict = demo_dataset.collate_batch([data_dict])
-            load_data_to_gpu(data_dict)
+            load_data_to_gpu(data_dict)  # 将数据放到GPU上
 
             start_time = datetime.datetime.now()
 
-            pred_dicts, _ = model.forward(data_dict)
+            pred_dicts, _ = model.forward(data_dict)  # 模型前向传播
 
             end_time = datetime.datetime.now()
             inference_time = (end_time - start_time).total_seconds()
@@ -104,10 +105,6 @@ def main():
 
             points=data_dict['points'][:, 1:]
             ref_boxes=pred_dicts[0]['pred_boxes']
-            # tensor([[6.3538e+00, -8.2585e-01, 8.4211e-01, 2.0021e-01, 3.2912e-01,
-            #          2.8992e-01, 6.1936e+00],
-            #         [5.8195e+00, -9.0257e-02, 7.7305e-01, 1.9004e-01, 3.3404e-01,
-            #          3.0013e-01, 6.1352e+00],.......
             ref_scores=pred_dicts[0]['pred_scores']
             ref_labels=pred_dicts[0]['pred_labels']
 
@@ -116,7 +113,7 @@ def main():
             labels = ref_labels.cpu().numpy()
             scores = ref_scores.cpu().numpy()
           
-            scores = scores > 0.4
+            scores = scores > 0.33
             for i, sc in enumerate(scores):
                 if(sc):
                     labels[i] = labels[i]

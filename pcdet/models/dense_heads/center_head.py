@@ -10,20 +10,28 @@ from ...utils import loss_utils
 
 class SeparateHead(nn.Module):
     def __init__(self, input_channels, sep_head_dict, init_bias=-2.19, use_bias=False):
+        """
+        :param input_channels: 64
+        :param sep_head_dict: {'stone': {'out_channels': 2, 'num_conv': 2}, 'hm': {'out_channels': 1, 'num_conv': 2}}
+        :param init_bias: -2.19
+        :param use_bias: True
+        """
         super().__init__()
         self.sep_head_dict = sep_head_dict
 
-        for cur_name in self.sep_head_dict:
+        for cur_name in self.sep_head_dict:  # cur_name:stone,hm
             output_channels = self.sep_head_dict[cur_name]['out_channels']
             num_conv = self.sep_head_dict[cur_name]['num_conv']
 
             fc_list = []
             for k in range(num_conv - 1):
                 fc_list.append(nn.Sequential(
+                    # stone:Conv2d(64, 64, 3, 1, 1);hm：Conv2d(64, 64, 3, 1, 1)
                     nn.Conv2d(input_channels, input_channels, kernel_size=3, stride=1, padding=1, bias=use_bias),
                     nn.BatchNorm2d(input_channels),
                     nn.ReLU()
                 ))
+            # stone:Conv2d(64, 2, 3, 1, 1)；hm：Conv2d(64, 1, 3, 1, 1)
             fc_list.append(nn.Conv2d(input_channels, output_channels, kernel_size=3, stride=1, padding=1, bias=True))
             fc = nn.Sequential(*fc_list)
             if 'hm' in cur_name:
@@ -35,7 +43,7 @@ class SeparateHead(nn.Module):
                         if hasattr(m, "bias") and m.bias is not None:
                             nn.init.constant_(m.bias, 0)
 
-            self.__setattr__(cur_name, fc)
+            self.__setattr__(cur_name, fc)  # 给键stone和hm赋值网络结构
 
     def forward(self, x):
         ret_dict = {}
@@ -48,42 +56,54 @@ class SeparateHead(nn.Module):
 class CenterHead(nn.Module):
     def __init__(self, model_cfg, input_channels, num_class, class_names, grid_size, point_cloud_range, voxel_size,
                  predict_boxes_when_training=True):
+        """
+           Args:
+               model_cfg: CenterHead的配置
+               input_channels:384 输入通道数
+               num_class: 1
+               class_names: ['stone']
+               grid_size: (432,493,1)
+               point_cloud_range:(0, -39.68, -3, 69.12, 39.68, 1)
+               voxel_size：{list:3}[0.16,0.16,4]
+               predict_boxes_when_training:False
+        """
         super().__init__()
         self.model_cfg = model_cfg
-        self.num_class = num_class
-        self.grid_size = grid_size
-        self.point_cloud_range = point_cloud_range
-        self.voxel_size = voxel_size
-        self.feature_map_stride = self.model_cfg.TARGET_ASSIGNER_CONFIG.get('FEATURE_MAP_STRIDE', None)
+        self.num_class = num_class  # 1
+        self.grid_size = grid_size  # (432,493,1)
+        self.point_cloud_range = point_cloud_range  # (0, -39.68, -3, 69.12, 39.68, 1)
+        self.voxel_size = voxel_size  # [0.16,0.16,4]
+        self.feature_map_stride = self.model_cfg.TARGET_ASSIGNER_CONFIG.get('FEATURE_MAP_STRIDE', None)  # 4
 
-        self.class_names = class_names
+        self.class_names = class_names  # ['stone']
         self.class_names_each_head = []
         self.class_id_mapping_each_head = []
 
-        for cur_class_names in self.model_cfg.CLASS_NAMES_EACH_HEAD:
-            self.class_names_each_head.append([x for x in cur_class_names if x in class_names])
-            cur_class_id_mapping = torch.from_numpy(np.array(
+        for cur_class_names in self.model_cfg.CLASS_NAMES_EACH_HEAD:  # ['stone']
+            self.class_names_each_head.append([x for x in cur_class_names if x in class_names])  # x：stone
+            cur_class_id_mapping = torch.from_numpy(np.array(  # cur_class_id_mapping=tensor([0],device='cuda:0')
                 [self.class_names.index(x) for x in cur_class_names if x in class_names]
             )).cuda()
             self.class_id_mapping_each_head.append(cur_class_id_mapping)
-
-        total_classes = sum([len(x) for x in self.class_names_each_head])
+        # class_names_each_head=['stone'], class_id_mapping_each_head=[tensor([0],device='cuda:0')]
+        total_classes = sum([len(x) for x in self.class_names_each_head])  # total_classes:1
         assert total_classes == len(self.class_names), f'class_names_each_head={self.class_names_each_head}'
 
         self.shared_conv = nn.Sequential(
-            nn.Conv2d(
+            nn.Conv2d(  # Conv2d(384,64,3,1,1)
                 input_channels, self.model_cfg.SHARED_CONV_CHANNEL, 3, stride=1, padding=1,
                 bias=self.model_cfg.get('USE_BIAS_BEFORE_NORM', False)
-            ),
+            ),  # BatchNorm2d(64)
             nn.BatchNorm2d(self.model_cfg.SHARED_CONV_CHANNEL),
             nn.ReLU(),
         )
 
-        self.heads_list = nn.ModuleList()
+        self.heads_list = nn.ModuleList()  # heads_list:ModuleList()
         self.separate_head_cfg = self.model_cfg.SEPARATE_HEAD_CFG
         for idx, cur_class_names in enumerate(self.class_names_each_head):
             cur_head_dict = copy.deepcopy(self.separate_head_cfg.HEAD_DICT)
             cur_head_dict['hm'] = dict(out_channels=len(cur_class_names), num_conv=self.model_cfg.NUM_HM_CONV)
+            # cur_head_dict={'stone': {'out_channels': 2, 'num_conv': 2}, 'hm': {'out_channels': 1, 'num_conv': 2}}
             self.heads_list.append(
                 SeparateHead(
                     input_channels=self.model_cfg.SHARED_CONV_CHANNEL,
@@ -93,7 +113,7 @@ class CenterHead(nn.Module):
                 )
             )
         self.predict_boxes_when_training = predict_boxes_when_training
-        self.forward_ret_dict = {}
+        self.forward_ret_dict = {}  # 初始化前向传播结果字典
         self.build_losses()
 
     def build_losses(self):
@@ -159,18 +179,17 @@ class CenterHead(nn.Module):
     def assign_targets(self, gt_boxes, feature_map_size=None, **kwargs):
         """
         Args:
-            gt_boxes: (B, M, 8)
+            gt_boxes: (B, M, 8)=([1, 26, 8])
             range_image_polar: (B, 3, H, W)
             feature_map_size: (2) [H, W]
             spatial_cartesian: (B, 4, H, W)
         Returns:
-
         """
-        feature_map_size = feature_map_size[::-1]  # [H, W] ==> [x, y]
+        feature_map_size = feature_map_size[::-1]  # [H, W] ==> [x, y]  ([216, 248])
         target_assigner_cfg = self.model_cfg.TARGET_ASSIGNER_CONFIG
         # feature_map_size = self.grid_size[:2] // target_assigner_cfg.FEATURE_MAP_STRIDE
 
-        batch_size = gt_boxes.shape[0]
+        batch_size = gt_boxes.shape[0]  # 1
         ret_dict = {
             'heatmaps': [],
             'target_boxes': [],
@@ -180,7 +199,7 @@ class CenterHead(nn.Module):
         }
 
         all_names = np.array(['bg', *self.class_names])
-        for idx, cur_class_names in enumerate(self.class_names_each_head):
+        for idx, cur_class_names in enumerate(self.class_names_each_head):  # stone
             heatmap_list, target_boxes_list, inds_list, masks_list = [], [], [], []
             for bs_idx in range(batch_size):
                 cur_gt_boxes = gt_boxes[bs_idx]
@@ -207,13 +226,15 @@ class CenterHead(nn.Module):
                     gaussian_overlap=target_assigner_cfg.GAUSSIAN_OVERLAP,
                     min_radius=target_assigner_cfg.MIN_RADIUS,
                 )
+                # print(ret_boxes.shape)  ([500, 8])
                 heatmap_list.append(heatmap.to(gt_boxes_single_head.device))
                 target_boxes_list.append(ret_boxes.to(gt_boxes_single_head.device))
                 inds_list.append(inds.to(gt_boxes_single_head.device))
                 masks_list.append(mask.to(gt_boxes_single_head.device))
 
             ret_dict['heatmaps'].append(torch.stack(heatmap_list, dim=0))
-            ret_dict['target_boxes'].append(torch.stack(target_boxes_list, dim=0))
+            ret_dict['target_boxes'].append(torch.stack(target_boxes_list, dim=0))  # (1,500,8)
+            # print(ret_dict['target_boxes'][0].shape)
             ret_dict['inds'].append(torch.stack(inds_list, dim=0))
             ret_dict['masks'].append(torch.stack(masks_list, dim=0))
         return ret_dict
@@ -223,22 +244,36 @@ class CenterHead(nn.Module):
         return y
 
     def get_loss(self):
-        pred_dicts = self.forward_ret_dict['pred_dicts']
-        target_dicts = self.forward_ret_dict['target_dicts']
+        # print("-----------------------1----------------------")
+        # print(self.forward_ret_dict)
+        """
+        forward_ret_dict: 来自最下面的forward函数中，其中target_dicts来自上面的assign_targets，
+        有'heatmaps','target_boxes','inds','masks','heatmap_masks'五个属性
+           {'target_dicts': 
+             {'heatmaps':[tensor()], 'target_boxes': [tensor()],'inds': [tensor()],'masks': [tensor()],'heatmap_masks': []},
+           'pred_dicts':[{'stone': tensor(),'hm': tensor()}]
+           }     
+        """
+        pred_dicts = self.forward_ret_dict['pred_dicts']  #
+        target_dicts = self.forward_ret_dict['target_dicts']  #
 
         tb_dict = {}
         loss = 0
 
-        for idx, pred_dict in enumerate(pred_dicts):
+        for idx, pred_dict in enumerate(pred_dicts):  # stone，hm
+            # print(pred_dict['stone'].shape)  (1, 2, 248, 216)
             pred_dict['hm'] = self.sigmoid(pred_dict['hm'])
-            hm_loss = self.hm_loss_func(pred_dict['hm'], target_dicts['heatmaps'][idx])
+            hm_loss = self.hm_loss_func(pred_dict['hm'], target_dicts['heatmaps'][idx])  # FocalLossCenterNet()在上面的build_losses中
+            # print("hm={}".format(hm_loss))
+            # hm_loss * 1.0 结果不变
             hm_loss *= self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['cls_weight']
 
-            target_boxes = target_dicts['target_boxes'][idx]
+            target_boxes = target_dicts['target_boxes'][idx]  # target_boxes：([1, 500, 8])
+            # pred_boxes：([1, 10, 248, 216])
             pred_boxes = torch.cat([pred_dict[head_name] for head_name in self.separate_head_cfg.HEAD_ORDER], dim=1)
 
-            reg_loss = self.reg_loss_func(
-                pred_boxes, target_dicts['masks'][idx], target_dicts['inds'][idx], target_boxes
+            reg_loss = self.reg_loss_func(  # RegLossCenterNet()在上面的build_losses中
+                pred_boxes, target_dicts['masks'][idx], target_dicts['inds'][idx], target_boxes  # 中间两都是(1, 500)
             )
             loc_loss = (reg_loss * reg_loss.new_tensor(self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['code_weights'])).sum()
             loc_loss = loc_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['loc_weight']
@@ -264,12 +299,13 @@ class CenterHead(nn.Module):
             batch_center = pred_dict['center']
             batch_center_z = pred_dict['center_z']
             batch_dim = pred_dict['dim'].exp()
-            batch_rot_cos = pred_dict['rot'][:, 0].unsqueeze(dim=1)
-            batch_rot_sin = pred_dict['rot'][:, 1].unsqueeze(dim=1)
+            # batch_rot_cos = pred_dict['rot'][:, 0].unsqueeze(dim=1)
+            # batch_rot_sin = pred_dict['rot'][:, 1].unsqueeze(dim=1)
             batch_vel = pred_dict['vel'] if 'vel' in self.separate_head_cfg.HEAD_ORDER else None
 
             final_pred_dicts = centernet_utils.decode_bbox_from_heatmap(
-                heatmap=batch_hm, rot_cos=batch_rot_cos, rot_sin=batch_rot_sin,
+                heatmap=batch_hm,
+                # rot_cos=batch_rot_cos, rot_sin=batch_rot_sin,
                 center=batch_center, center_z=batch_center_z, dim=batch_dim, vel=batch_vel,
                 point_cloud_range=self.point_cloud_range, voxel_size=self.voxel_size,
                 feature_map_stride=self.feature_map_stride,
@@ -322,14 +358,15 @@ class CenterHead(nn.Module):
         return rois, roi_scores, roi_labels
 
     def forward(self, data_dict):
-        spatial_features_2d = data_dict['spatial_features_2d']
-        x = self.shared_conv(spatial_features_2d)
-
+        # print("-----------------------1----------------------")
+        # print(data_dict['spatial_features_2d'].shape)
+        spatial_features_2d = data_dict['spatial_features_2d']  # 2d空间特征:(1, 384, 248, 216)
+        x = self.shared_conv(spatial_features_2d)  # x:(1, 64, 248, 216)
         pred_dicts = []
         for head in self.heads_list:
-            pred_dicts.append(head(x))
-
+            pred_dicts.append(head(x))  # [{'stone': tensor(),'hm': tensor()}]
         if self.training:
+            # print("1:{}".format(data_dict['gt_boxes'].shape))
             target_dict = self.assign_targets(
                 data_dict['gt_boxes'], feature_map_size=spatial_features_2d.size()[2:],
                 feature_map_stride=data_dict.get('spatial_features_2d_strides', None)
@@ -351,5 +388,5 @@ class CenterHead(nn.Module):
                 data_dict['has_class_labels'] = True
             else:
                 data_dict['final_box_dicts'] = pred_dicts
-
+        # print(data_dict)  此时的data_dice包含很多其他变量信息
         return data_dict

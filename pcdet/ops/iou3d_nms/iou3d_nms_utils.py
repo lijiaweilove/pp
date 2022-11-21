@@ -88,7 +88,7 @@ def nms_gpu(boxes, scores, thresh, pre_maxsize=None, **kwargs):
     :param thresh:
     :return:
     """
-    assert boxes.shape[1] == 7
+    # assert boxes.shape[1] == 6
     order = scores.sort(0, descending=True)[1]
     if pre_maxsize is not None:
         order = order[:pre_maxsize]

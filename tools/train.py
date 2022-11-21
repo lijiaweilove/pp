@@ -20,7 +20,7 @@ from train_utils.train_utils import train_model
 
 def parse_config():
     parser = argparse.ArgumentParser(description='arg parser')
-    parser.add_argument('--cfg_file', type=str, default="cfgs/kitti_models/pointpillar.yaml", help='specify the config for training')
+    parser.add_argument('--cfg_file', type=str, default="cfgs/kitti_models/pointcenter.yaml", help='specify the config for training')
 
     parser.add_argument('--batch_size', type=int, default=None, required=False, help='batch size for training')
     parser.add_argument('--epochs', type=int, default=None, required=False, help='number of epochs to train for')
@@ -55,50 +55,52 @@ def parse_config():
 
     return args, cfg
 
-
 def main():
     args, cfg = parse_config()
-    if args.launcher == 'none':
+    if args.launcher == 'none':  # 单GPU训练
         dist_train = False
         total_gpus = 1
     else:
         total_gpus, cfg.LOCAL_RANK = getattr(common_utils, 'init_dist_%s' % args.launcher)(
             args.tcp_port, args.local_rank, backend='nccl'
-        )
+        )  # 调用common_utils中的init_dist_pytorch方法
         dist_train = True
 
     if args.batch_size is None:
-        args.batch_size = cfg.OPTIMIZATION.BATCH_SIZE_PER_GPU
+        args.batch_size = cfg.OPTIMIZATION.BATCH_SIZE_PER_GPU  # batch_size:4
     else:
         assert args.batch_size % total_gpus == 0, 'Batch size should match the number of gpus'
-        args.batch_size = args.batch_size // total_gpus
+        args.batch_size = args.batch_size // total_gpus  # 根据GPU数量计算batch_size
 
-    args.epochs = cfg.OPTIMIZATION.NUM_EPOCHS if args.epochs is None else args.epochs
+    args.epochs = cfg.OPTIMIZATION.NUM_EPOCHS if args.epochs is None else args.epochs  # epochs: 80
 
-    if args.fix_random_seed:
+    if args.fix_random_seed:  # default=False,设定随机种子，使得随机数具有可重复性
         common_utils.set_random_seed(666)
-
+    # 创建输出文件夹
     output_dir = cfg.ROOT_DIR / 'output' / cfg.EXP_GROUP_PATH / cfg.TAG / args.extra_tag
     ckpt_dir = output_dir / 'ckpt'
     output_dir.mkdir(parents=True, exist_ok=True)
     ckpt_dir.mkdir(parents=True, exist_ok=True)
-
+    # 创建日志记录器
     log_file = output_dir / ('log_train_%s.txt' % datetime.datetime.now().strftime('%Y%m%d-%H%M%S'))
     logger = common_utils.create_logger(log_file, rank=cfg.LOCAL_RANK)
 
     # log to file
     logger.info('**********************Start logging**********************')
+    # 单GPU的话gpu_list：‘ALL’
     gpu_list = os.environ['CUDA_VISIBLE_DEVICES'] if 'CUDA_VISIBLE_DEVICES' in os.environ.keys() else 'ALL'
     logger.info('CUDA_VISIBLE_DEVICES=%s' % gpu_list)
-
+    # 如果是多卡并行训练，记录总的total_batch_size
     if dist_train:
         logger.info('total_batch_size: %d' % (total_gpus * args.batch_size))
+    # 如果是单卡训练则记录命令行参数值
     for key, val in vars(args).items():
         logger.info('{:16} {}'.format(key, val))
-    log_config_to_file(cfg, logger=logger)
-    if cfg.LOCAL_RANK == 0:
-        os.system('cp %s %s' % (args.cfg_file, output_dir))
+    log_config_to_file(cfg, logger=logger)  # 将配置文件记录到log文件中
 
+    if cfg.LOCAL_RANK == 0:  # 如果单GPU训练，复制配置文件
+        os.system('cp %s %s' % (args.cfg_file, output_dir))
+    # 初始化tensorboard
     tb_log = SummaryWriter(log_dir=str(output_dir / 'tensorboard')) if cfg.LOCAL_RANK == 0 else None
 
     # -----------------------create dataloader & network & optimizer---------------------------
@@ -118,19 +120,21 @@ def main():
     if args.sync_bn:  # 如果设置了BN同步则进行同步设置
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
     model.cuda()
-    # 3.构建优化器
+    # 3.构建优化器：用来降低损失的
     optimizer = build_optimizer(model, cfg.OPTIMIZATION)
 
     # 4.如果可能，尽量加载之前的模型权重
-    start_epoch = it = 0
-    last_epoch = -1
-    if args.pretrained_model is not None:
+    start_epoch = it = 0  # 起始epoch
+    last_epoch = -1  # 上一次的epoch
+    if args.pretrained_model is not None:  # 如果存在预训练模型则加载模型参数
         model.load_params_from_file(filename=args.pretrained_model, to_cpu=dist_train, logger=logger)
 
-    if args.ckpt is not None:
+    if args.ckpt is not None:  # 如果存在断点训练，则加载之前训练的权重，包括优化器
         it, start_epoch = model.load_params_with_optimizer(args.ckpt, to_cpu=dist_train, optimizer=optimizer, logger=logger)
         last_epoch = start_epoch + 1
     else:
+        # 如果没有写权重位置，也会取权重文件夹，查找是否存在之前训练的权重
+        # 如果存在，则加载最后一次的权重文件
         ckpt_list = glob.glob(str(ckpt_dir / '*checkpoint_epoch_*.pth'))
         if len(ckpt_list) > 0:
             ckpt_list.sort(key=os.path.getmtime)
@@ -138,12 +142,12 @@ def main():
                 ckpt_list[-1], to_cpu=dist_train, optimizer=optimizer, logger=logger
             )
             last_epoch = start_epoch + 1
-
+    # 5.设置模型为训练模式
     model.train()  # before wrap to DistributedDataParallel to support fixed some parameters
     if dist_train:
         model = nn.parallel.DistributedDataParallel(model, device_ids=[cfg.LOCAL_RANK % torch.cuda.device_count()])
     logger.info(model)
-
+    # 6.构建调度器：对优化器的学习率进行调整
     lr_scheduler, lr_warmup_scheduler = build_scheduler(
         optimizer, total_iters_each_epoch=len(train_loader), total_epochs=args.epochs,
         last_epoch=last_epoch, optim_cfg=cfg.OPTIMIZATION
@@ -152,11 +156,12 @@ def main():
     # -----------------------start training---------------------------
     logger.info('**********************Start training %s/%s(%s)**********************'
                 % (cfg.EXP_GROUP_PATH, cfg.TAG, args.extra_tag))
+    # 调用train_utils中的train_model函数
     train_model(
         model,
         optimizer,
         train_loader,
-        model_func=model_fn_decorator(),
+        model_func=model_fn_decorator(),  # 主要是将数据放到模型上在返回loss
         lr_scheduler=lr_scheduler,
         optim_cfg=cfg.OPTIMIZATION,
         start_epoch=start_epoch,
@@ -180,16 +185,20 @@ def main():
 
     logger.info('**********************Start evaluation %s/%s(%s)**********************' %
                 (cfg.EXP_GROUP_PATH, cfg.TAG, args.extra_tag))
+    # 训练结束后，对模型进行评估
+    # 1.构建test数据集和加载器
     test_set, test_loader, sampler = build_dataloader(
         dataset_cfg=cfg.DATA_CONFIG,
         class_names=cfg.CLASS_NAMES,
         batch_size=args.batch_size,
         dist=dist_train, workers=args.workers, logger=logger, training=False
     )
+    # 2.构造评估结果输出文件夹
+    # /home/ggj/ObjectDetection/OpenPCDet/output/kitti_models/pointpillar/default/eval/eval_with_train
     eval_output_dir = output_dir / 'eval' / 'eval_with_train'
     eval_output_dir.mkdir(parents=True, exist_ok=True)
     args.start_epoch = max(args.epochs - args.num_epochs_to_eval, 0)  # Only evaluate the last args.num_epochs_to_eval epochs
-
+    # 3.调用test中的repeat_eval_ckpt进行模型评估
     repeat_eval_ckpt(  # (--------------1-------------)
         model.module if dist_train else model,
         test_loader, args, eval_output_dir, logger, ckpt_dir,

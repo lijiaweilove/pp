@@ -37,6 +37,15 @@ def build_optimizer(model, optim_cfg):
 
 
 def build_scheduler(optimizer, total_iters_each_epoch, total_epochs, last_epoch, optim_cfg):
+    """
+       构建学习率调度器：三种方式adam_onecycle、LambdaLR、CosineWarmupLR
+       Args:
+           optimizer:优化器
+           total_iters_each_epoch：一个epoch的迭代次数:982
+           total_epoch:总共的epoch数:80
+           last_epoch:上一次的epoch_id
+           optim_cfg:优化配置
+       """
     decay_steps = [x * total_iters_each_epoch for x in optim_cfg.DECAY_STEP_LIST]
     def lr_lbmd(cur_epoch):
         cur_decay = 1

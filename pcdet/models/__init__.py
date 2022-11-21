@@ -35,18 +35,24 @@ def load_data_to_gpu(batch_dict):
 
 
 def model_fn_decorator():
+    # 定义一个namedtuple类型: https://blog.csdn.net/kongxx/article/details/51553362
+    # 包括平均损失，tensorboard结果字典，显示结果字典
     ModelReturn = namedtuple('ModelReturn', ['loss', 'tb_dict', 'disp_dict'])
 
     def model_func(model, batch_dict):
-        load_data_to_gpu(batch_dict)
+        load_data_to_gpu(batch_dict)  # 1.将数据放到GPU上
+        # 2.将数据放入模型，得到结果字典,这里开始调用pointcenter的forward函数
         ret_dict, tb_dict, disp_dict = model(batch_dict)
 
-        loss = ret_dict['loss'].mean()
+        loss = ret_dict['loss'].mean()  # 3.计算平均损失
+        # 4.更新当前训练的迭代次数，Detector3DTemplate中进行注册global_step
+        # global_step在滑动平均、优化器、指数衰减学习率等方面都有用到
+        # global_step的初始化值是0
         if hasattr(model, 'update_global_step'):
             model.update_global_step()
         else:
             model.module.update_global_step()
-
+        # 5.创建一个ModelReturn对象并返回，
         return ModelReturn(loss, tb_dict, disp_dict)
 
     return model_func

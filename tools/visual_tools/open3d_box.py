@@ -38,7 +38,7 @@ def box2corners(box):
     w = box[4]  # dy
     h = box[5]  # dz
 
-    yaw = box[6]
+    yaw = 0
 
     # 3d bounding box corners
     Box = np.array(

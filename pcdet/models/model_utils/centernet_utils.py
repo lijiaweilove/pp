@@ -151,7 +151,9 @@ def _topk(scores, K=40):
     return topk_score, topk_inds, topk_classes, topk_ys, topk_xs
 
 
-def decode_bbox_from_heatmap(heatmap, rot_cos, rot_sin, center, center_z, dim,
+def decode_bbox_from_heatmap(heatmap,
+                             # rot_cos, rot_sin,
+                             center, center_z, dim,
                              point_cloud_range=None, voxel_size=None, feature_map_stride=None, vel=None, K=100,
                              circle_nms=False, score_thresh=None, post_center_limit_range=None):
     batch_size, num_class, _, _ = heatmap.size()
@@ -163,19 +165,20 @@ def decode_bbox_from_heatmap(heatmap, rot_cos, rot_sin, center, center_z, dim,
 
     scores, inds, class_ids, ys, xs = _topk(heatmap, K=K)
     center = _transpose_and_gather_feat(center, inds).view(batch_size, K, 2)
-    rot_sin = _transpose_and_gather_feat(rot_sin, inds).view(batch_size, K, 1)
-    rot_cos = _transpose_and_gather_feat(rot_cos, inds).view(batch_size, K, 1)
+    # rot_sin = _transpose_and_gather_feat(rot_sin, inds).view(batch_size, K, 1)
+    # rot_cos = _transpose_and_gather_feat(rot_cos, inds).view(batch_size, K, 1)
     center_z = _transpose_and_gather_feat(center_z, inds).view(batch_size, K, 1)
     dim = _transpose_and_gather_feat(dim, inds).view(batch_size, K, 3)
 
-    angle = torch.atan2(rot_sin, rot_cos)
+    # angle = torch.atan2(rot_sin, rot_cos)
     xs = xs.view(batch_size, K, 1) + center[:, :, 0:1]
     ys = ys.view(batch_size, K, 1) + center[:, :, 1:2]
 
     xs = xs * feature_map_stride * voxel_size[0] + point_cloud_range[0]
     ys = ys * feature_map_stride * voxel_size[1] + point_cloud_range[1]
 
-    box_part_list = [xs, ys, center_z, dim, angle]
+    # box_part_list = [xs, ys, center_z, dim, angle]
+    box_part_list = [xs, ys, center_z, dim]
     if vel is not None:
         vel = _transpose_and_gather_feat(vel, inds).view(batch_size, K, 2)
         box_part_list.append(vel)
